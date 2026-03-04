@@ -235,12 +235,40 @@ code { font-family:'Space Mono',monospace !important; color:var(--accent) !impor
 
 
 # ── IMPORTS ───────────────────────────────────────────────────────────────────
+# Core functions — always present in every version of score.py
 from core.score import (
-    detect_fillers, annotate_transcript, annotate_transcript_full,
-    detect_discourse_connectors, score_discourse_coherence,
-    detect_grammar_issues, compute_scores, compute_articulation_score,
+    detect_fillers, annotate_transcript, compute_scores,
     BENCHMARKS, score_label, score_css, score_color,
 )
+
+# Extended functions added in v4.
+# Stubs below keep the app alive if score.py on GitHub is still the old version.
+try:
+    from core.score import (
+        annotate_transcript_full,
+        detect_discourse_connectors,
+        score_discourse_coherence,
+        detect_grammar_issues,
+        compute_articulation_score,
+    )
+except ImportError:
+    import numpy as _np
+
+    def annotate_transcript_full(transcript, filler_matches, connector_matches):
+        return annotate_transcript(transcript, filler_matches)
+
+    def detect_discourse_connectors(transcript):
+        return {"matches": [], "by_type": {}, "count": 0, "types_used": 0}
+
+    def score_discourse_coherence(disc, duration_s, word_count):
+        return 60.0
+
+    def detect_grammar_issues(transcript):
+        return []
+
+    def compute_articulation_score(art_rate):
+        return float(_np.clip((art_rate - 80) / 140 * 100, 0, 100))
+
 from core.storage import get_history, add_session, clear_history, export_json, import_json
 
 
