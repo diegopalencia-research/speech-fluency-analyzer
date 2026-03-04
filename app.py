@@ -201,6 +201,91 @@ h3 { font-family:'Space Mono',monospace !important; color:var(--accent) !importa
 /* ── Code ── */
 code { font-family:'Space Mono',monospace !important; color:var(--accent) !important;
        background:rgba(0,212,170,.08) !important; padding:.1em .35em; border-radius:4px; }
+
+/* ── Recording live indicator ── */
+@keyframes pulse-ring {
+  0%   { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+@keyframes recording-bar {
+  0%,100% { height: 6px; }
+  25%     { height: 18px; }
+  50%     { height: 10px; }
+  75%     { height: 22px; }
+}
+.rec-indicator {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(255,107,53,.1); border: 1px solid rgba(255,107,53,.35);
+  border-radius: 10px; padding: 14px 18px; margin: 12px 0;
+}
+.rec-dot-wrap { position: relative; width: 14px; height: 14px; flex-shrink:0; }
+.rec-dot {
+  position: absolute; inset: 0;
+  background: #FF6B35; border-radius: 50%;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+.rec-ring {
+  position: absolute; inset: 0;
+  border: 2px solid #FF6B35; border-radius: 50%;
+  animation: pulse-ring 1.2s ease-out infinite;
+}
+.rec-bars { display:flex; align-items:center; gap:3px; height:24px; }
+.rec-bar {
+  width: 3px; background: #FF6B35; border-radius: 2px;
+  animation: recording-bar 0.8s ease-in-out infinite;
+}
+.rec-bar:nth-child(1) { animation-delay: 0s; }
+.rec-bar:nth-child(2) { animation-delay: 0.15s; }
+.rec-bar:nth-child(3) { animation-delay: 0.3s; }
+.rec-bar:nth-child(4) { animation-delay: 0.45s; }
+.rec-bar:nth-child(5) { animation-delay: 0.15s; }
+.rec-label {
+  font-family: 'Space Mono', monospace;
+  font-size: .82rem; color: #FF6B35; letter-spacing: .08em;
+}
+.rec-hint { font-size:.78rem; color:#8892A4; }
+
+/* ── Sidebar API keys section ── */
+.api-key-block {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
+}
+.api-key-label {
+  font-size:.72rem; color:var(--gray); text-transform:uppercase;
+  letter-spacing:.07em; margin-bottom:4px; display:flex;
+  align-items:center; gap:6px;
+}
+.api-badge-free {
+  background: rgba(0,212,170,.15); color: var(--accent);
+  font-size:.65rem; padding:1px 6px; border-radius:20px;
+  letter-spacing:.05em; text-transform:uppercase;
+}
+.api-badge-opt {
+  background: rgba(136,146,164,.1); color: var(--gray);
+  font-size:.65rem; padding:1px 6px; border-radius:20px;
+  letter-spacing:.05em; text-transform:uppercase;
+}
+
+/* ── Sidebar section headers ── */
+.sidebar-section-head {
+  font-size:.7rem; color:var(--accent); text-transform:uppercase;
+  letter-spacing:.1em; font-family:'Space Mono',monospace;
+  margin: 4px 0 10px; display:flex; align-items:center; gap:8px;
+}
+.sidebar-section-head::after {
+  content:''; flex:1; height:1px; background:var(--border);
+}
+
+/* ── Responsive tabs ── */
+@media (max-width: 768px) {
+  .stTabs [data-baseweb="tab"] { font-size:.72rem !important; padding: 6px 8px !important; }
+  [data-testid="stMetricValue"] { font-size:1.4rem !important; }
+  .score-badge { font-size: 2.8rem !important; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -267,28 +352,53 @@ with st.sidebar:
     )
     st.divider()
 
-    # ── API Keys (all optional) ──
-    with st.expander("🔑 API Keys (all optional)", expanded=False):
-        st.markdown(
-            "<span style='font-size:.8rem;color:#8892A4'>"
-            "The app runs fully free without any keys. "
-            "Keys unlock faster transcription and AI coaching.</span>",
-            unsafe_allow_html=True,
-        )
-        openai_key = st.text_input("OpenAI API key", type="password",
-                                    placeholder="sk-… (faster Whisper API)",
-                                    help="Optional. Enables OpenAI Whisper API (~5s vs ~30s local).")
-        groq_key   = st.text_input("Groq API key", type="password",
-                                    placeholder="gsk_… (free at console.groq.com)",
-                                    help="Optional. Free tier. Enables AI coaching via Llama-3.3-70b.")
-        # Fall back to Streamlit secrets
-        openai_key = openai_key or st.secrets.get("OPENAI_API_KEY", "")
-        groq_key   = groq_key   or st.secrets.get("GROQ_API_KEY",   "")
+    # ── API Keys ──
+    st.markdown('<div class="sidebar-section-head">API Keys</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="api-key-block">
+      <div class="api-key-label">
+        OpenAI Whisper
+        <span class="api-badge-opt">Optional</span>
+      </div>
+      <div style='font-size:.75rem;color:#8892A4;margin-bottom:6px'>
+        Faster transcription (~5s vs ~30s local)
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    openai_key = st.text_input("openai_key", type="password",
+                                placeholder="sk-…",
+                                label_visibility="collapsed")
+
+    st.markdown("""
+    <div class="api-key-block" style="margin-top:8px">
+      <div class="api-key-label">
+        Groq AI Coaching
+        <span class="api-badge-free">Free</span>
+      </div>
+      <div style='font-size:.75rem;color:#8892A4;margin-bottom:6px'>
+        AI feedback via Llama-3.3 · console.groq.com
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    groq_key = st.text_input("groq_key", type="password",
+                              placeholder="gsk_…",
+                              label_visibility="collapsed")
+
+    st.markdown(
+        "<div style='font-size:.72rem;color:rgba(136,146,164,.6);margin-top:4px'>"
+        "All keys are optional. The app runs fully free without them.</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Fall back to Streamlit secrets
+    openai_key = openai_key or st.secrets.get("OPENAI_API_KEY", "")
+    groq_key   = groq_key   or st.secrets.get("GROQ_API_KEY",   "")
 
     st.divider()
 
     # ── Settings ──
-    st.markdown("**Settings**")
+    st.markdown('<div class="sidebar-section-head">Settings</div>', unsafe_allow_html=True)
     benchmark   = st.selectbox("Benchmark", list(BENCHMARKS.keys()), index=0)
     silence_db  = st.slider("Silence threshold (dB)", 15, 45, 30,
                              help="Lower = more sensitive to quiet speech")
@@ -297,19 +407,19 @@ with st.sidebar:
     model_size  = st.selectbox("Local Whisper model",
                                 ["tiny", "base", "small"],
                                 index=0,
-                                help="tiny=fastest/free · base=better accuracy · small=best accuracy")
+                                help="tiny = fastest · base = better · small = best accuracy")
 
     st.divider()
 
     # ── Reference card ──
     st.markdown("""
     <div style='font-size:.76rem;color:#8892A4;line-height:1.8'>
-    <b style='color:#00D4AA'>Formula</b><br>
+    <b style='color:#00D4AA'>Score formula</b><br>
     40% WPM · 35% Pause · 25% Filler<br><br>
-    <b style='color:#00D4AA'>Targets</b><br>
+    <b style='color:#00D4AA'>Score targets</b><br>
     Call center entry: ≥ 68<br>
     Professional: ≥ 80<br><br>
-    <b style='color:#00D4AA'>References</b><br>
+    <b style='color:#00D4AA'>Research basis</b><br>
     Lennon (1990)<br>
     Skehan (1996)<br>
     Tavakoli & Skehan (2005)
@@ -319,6 +429,7 @@ with st.sidebar:
     st.divider()
 
     # ── History controls ──
+    st.markdown('<div class="sidebar-section-head">Session History</div>', unsafe_allow_html=True)
     col_exp, col_clr = st.columns(2)
     with col_exp:
         st.download_button(
@@ -334,9 +445,17 @@ with st.sidebar:
             clear_history(); st.rerun()
 
     # ── Import ──
-    with st.expander("📥 Import history"):
-        uploaded_hist = st.file_uploader("Upload fluency_history.json",
-                                          type="json", label_visibility="collapsed")
+    with st.expander("📥 Import previous history"):
+        st.markdown(
+            "<div style='font-size:.75rem;color:#8892A4;margin-bottom:8px'>"
+            "Upload a previously exported <code>fluency_history.json</code> "
+            "to restore your progress.</div>",
+            unsafe_allow_html=True,
+        )
+        uploaded_hist = st.file_uploader(
+            "history_json", type="json", label_visibility="collapsed",
+            help="Upload fluency_history.json"
+        )
         if uploaded_hist:
             ok, msg = import_json(uploaded_hist.read().decode())
             (st.success if ok else st.error)(msg)
@@ -348,13 +467,48 @@ st.markdown('<div class="eyebrow">PROJECT 03 · SPEECH SCIENCE · L2 ASSESSMENT<
             unsafe_allow_html=True)
 st.title("Speech Fluency Analyzer")
 st.markdown(
-    "<p style='color:#8892A4;font-size:.95rem;max-width:660px;margin-top:-.4rem'>"
-    "Record or upload English speech. The analyzer extracts acoustic features — "
-    "words per minute, pause frequency, filler rate — and returns a composite fluency "
-    "score grounded in peer-reviewed L2 research. "
-    "<b style='color:#F0F4F8'>No API key required to get started.</b></p>",
+    "<p style='color:#8892A4;font-size:.95rem;max-width:720px;margin-top:-.4rem;line-height:1.75'>"
+    "Upload or record a 30–60 second English speech sample. The analyzer automatically "
+    "extracts three acoustic features "
+    "(speaking rate in words per minute, pause frequency, and filler word rate) "
+    "and combines them into a single <b style='color:#F0F4F8'>Fluency Score from 0 to 100</b>, "
+    "calibrated against professional call center and native speaker benchmarks. "
+    "You receive a score breakdown, an annotated transcript with fillers highlighted, "
+    "a waveform with pause markers, specific coaching advice, and a progress dashboard "
+    "that tracks your improvement across sessions. "
+    "<b style='color:#00D4AA'>No API key required to get started.</b>"
+    "</p>",
     unsafe_allow_html=True,
 )
+
+# ── What it evaluates info cards ──
+ev1, ev2, ev3 = st.columns(3)
+for col, icon, title, body in [
+    (ev1, "🗣", "Speaking Rate (WPM)",
+     "Measures how many words you speak per minute. Native English ranges from 130–180 WPM. "
+     "Below 100 WPM signals disfluency. Above 185 WPM reduces clarity."),
+    (ev2, "⏸", "Pause Frequency",
+     "Counts involuntary silences longer than 400ms per minute. "
+     "L2 speakers pause 3–4× more than native speakers. "
+     "Pauses inside sentences disrupt comprehension most."),
+    (ev3, "💬", "Filler Word Rate",
+     "Detects 'uh', 'um', 'like', 'you know', 'basically' and similar disfluency markers. "
+     "High filler rate signals difficulty with real-time planning. "
+     "Professional target: fewer than 2 per minute."),
+]:
+    with col:
+        col.markdown(
+            f"<div style='background:#162030;border:1px solid rgba(0,212,170,.15);"
+            f"border-radius:10px;padding:1rem 1.1rem;height:100%'>"
+            f"<div style='font-size:1.3rem;margin-bottom:.4rem'>{icon}</div>"
+            f"<div style='font-family:Space Mono,monospace;font-size:.78rem;"
+            f"color:#00D4AA;text-transform:uppercase;letter-spacing:.06em;"
+            f"margin-bottom:.5rem'>{title}</div>"
+            f"<div style='font-size:.82rem;color:#8892A4;line-height:1.6'>{body}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
 st.divider()
 
 
@@ -370,25 +524,62 @@ audio_suffix = ".wav"
 with tab_mic:
     st.markdown(
         "<p style='color:#8892A4;font-size:.88rem'>"
-        "Click the microphone to start recording. Speak for 30–60 seconds, "
-        "then click again to stop. Works on Chrome/Edge/Safari.</p>",
+        "Click the microphone button below to start recording. "
+        "Speak clearly for 30–60 seconds, then click it again to stop.</p>",
         unsafe_allow_html=True,
     )
     try:
         from audio_recorder_streamlit import audio_recorder
+
+        # State tracking for live indicator
+        if "is_recording" not in st.session_state:
+            st.session_state["is_recording"] = False
+
         recorded = audio_recorder(
             text="",
-            recording_color="#00D4AA",
+            recording_color="#FF6B35",
             neutral_color="#8892A4",
             icon_size="3x",
             pause_threshold=3.0,
             sample_rate=16000,
         )
-        if recorded:
+
+        # Show live recording indicator while recording (before audio is returned)
+        if not recorded:
+            st.markdown("""
+            <div class="rec-indicator">
+              <div class="rec-dot-wrap">
+                <div class="rec-ring"></div>
+                <div class="rec-dot"></div>
+              </div>
+              <div class="rec-bars">
+                <div class="rec-bar"></div>
+                <div class="rec-bar"></div>
+                <div class="rec-bar"></div>
+                <div class="rec-bar"></div>
+                <div class="rec-bar"></div>
+              </div>
+              <div>
+                <div class="rec-label">CLICK MIC TO START · CLICK AGAIN TO STOP</div>
+                <div class="rec-hint">Recommended: 30–60 seconds of natural English speech</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
             audio_bytes  = recorded
             audio_suffix = ".wav"
+            st.markdown("""
+            <div style='background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.3);
+                        border-radius:10px;padding:12px 16px;margin:10px 0;
+                        display:flex;align-items:center;gap:10px'>
+              <span style='font-size:1.1rem'>✅</span>
+              <span style='font-family:Space Mono,monospace;font-size:.82rem;color:#00D4AA'>
+                Recording captured (click Analyse Speech below)
+              </span>
+            </div>
+            """, unsafe_allow_html=True)
             st.audio(recorded, format="audio/wav")
-            st.success("✅ Recording captured — click **Analyse** below.")
+
     except ImportError:
         st.warning(
             "The microphone recorder requires `audio-recorder-streamlit`. "
@@ -418,7 +609,7 @@ with tab_demo:
     st.markdown(
         "<p style='color:#8892A4;font-size:.88rem'>"
         "No microphone or file needed. Explore the full dashboard with a "
-        "synthetic 48-second English sample — pre-loaded with realistic metrics.</p>",
+        "synthetic 48-second English sample (pre-loaded with realistic metrics).</p>",
         unsafe_allow_html=True,
     )
     run_demo = st.button("▶  Run demo analysis", use_container_width=False)
@@ -618,7 +809,7 @@ else:
     st.markdown(
         '<div style="background:#162030;border:1px solid rgba(0,212,170,.15);'
         'border-radius:8px;padding:1.2rem;text-align:center;color:#8892A4;font-size:.85rem">'
-        '〰️  Demo mode — waveform not available. Upload or record audio to see the annotated waveform.'
+        '〰️  Demo mode (waveform not available). Upload or record audio to see the annotated waveform.'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -730,12 +921,12 @@ if groq_key and not r.get("demo"):
         except Exception as e:
             st.warning(f"Groq coaching unavailable: {e}")
 elif groq_key and r.get("demo"):
-    st.info("🤖 AI coaching is disabled in demo mode — it needs a real transcript.")
+    st.info("🤖 AI coaching is disabled in demo mode (it needs a real transcript).")
 else:
     st.markdown(
         '<div style="font-size:.8rem;color:#8892A4;margin-top:.5rem">'
         '💡 Add a free <b style="color:#F0F4F8">Groq API key</b> in the sidebar for AI-powered, '
-        'transcript-specific coaching (free at <code>console.groq.com</code> — no credit card).'
+        'transcript-specific coaching (free at <code>console.groq.com</code>, no credit card required).'
         '</div>',
         unsafe_allow_html=True,
     )
