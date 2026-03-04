@@ -7,3 +7,4 @@ numpy>=1.24.0
 matplotlib>=3.8.0
 soundfile>=0.12.1
 audio-recorder-streamlit>=0.0.8
+reportlab>=4.0.0
