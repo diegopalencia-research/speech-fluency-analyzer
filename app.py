@@ -3,20 +3,16 @@ app.py — Speech Fluency Analyzer
 ══════════════════════════════════════════════════════════════════════════════
 Project 03 · Diego Jose Palencia Robles · github.com/diegopalencia-research
 
-Two input modes:
-  • Upload  — WAV / MP3 / M4A file
-  • Record  — Live microphone via browser
+Input modes       : Live microphone  |  File upload (WAV/MP3/M4A/OGG)
+Transcription     : Local Whisper (free, no key)  |  OpenAI Whisper API
+Core features     : WPM · Pause rate · Filler rate
+Extended features : Articulation rate · Pitch variation · Whisper confidence
+Feedback          : Rule-based (always)  |  Groq AI coaching (optional/free)
+Identity          : Username-keyed persistent progress across sessions
+Export            : JSON report  |  TXT transcript  |  Branded PDF report
 
-Two transcription backends:
-  • Local Whisper (default, free, no API key)
-  • OpenAI Whisper API (optional, faster)
-
-Two feedback tiers:
-  • Rule-based (always available, free)
-  • Groq AI coaching (optional, free API at console.groq.com)
-
-Research basis:
-  Lennon (1990) · Skehan (1996) · Tavakoli & Skehan (2005)
+Research basis    : Lennon (1990) · Skehan (1996) · Tavakoli & Skehan (2005)
+                    Kormos & Denes (2004) · Hincks (2005)
 ══════════════════════════════════════════════════════════════════════════════
 """
 
@@ -24,14 +20,13 @@ import streamlit as st
 import numpy as np
 import json
 import os
-import io
 import tempfile
 from datetime import datetime
 
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Speech Fluency Analyzer",
-    page_icon="🎙️",
+    page_icon="◎",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -39,7 +34,7 @@ st.set_page_config(
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
 
 :root {
   --navy:   #0D1F35;
@@ -51,7 +46,7 @@ st.markdown("""
   --gold:   #FFD166;
   --light:  #F0F4F8;
   --gray:   #8892A4;
-  --border: rgba(0,212,170,0.18);
+  --border: rgba(0,212,170,0.15);
 }
 
 html, body, [class*="css"] {
@@ -71,61 +66,90 @@ html, body, [class*="css"] {
 [data-testid="metric-container"] {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1rem 1.2rem;
+  border-radius: 8px;
+  padding: .9rem 1.1rem;
 }
 [data-testid="stMetricValue"] {
   color: var(--accent) !important;
   font-family: 'Space Mono', monospace !important;
-  font-size: 1.8rem !important;
+  font-size: 1.7rem !important;
 }
 [data-testid="stMetricLabel"] {
   color: var(--gray) !important;
-  font-size: 0.78rem !important;
-  letter-spacing: 0.04em;
+  font-size: .72rem !important;
+  letter-spacing: .05em;
   text-transform: uppercase;
 }
 
 /* ── Typography ── */
-h1 { font-family:'Space Mono',monospace !important; color:var(--accent) !important; font-size:1.9rem !important; }
-h2 { font-family:'Space Mono',monospace !important; color:var(--light) !important;
-     border-bottom:1px solid var(--border); padding-bottom:.5rem; font-size:1.1rem !important; }
-h3 { font-family:'Space Mono',monospace !important; color:var(--accent) !important; font-size:.95rem !important; }
+h1 {
+  font-family: 'Space Mono', monospace !important;
+  color: var(--accent) !important;
+  font-size: 1.75rem !important;
+  letter-spacing: -.02em;
+}
+h2 {
+  font-family: 'Space Mono', monospace !important;
+  color: var(--light) !important;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .4rem;
+  font-size: 1rem !important;
+  letter-spacing: -.01em;
+}
+h3 {
+  font-family: 'Space Mono', monospace !important;
+  color: var(--accent) !important;
+  font-size: .88rem !important;
+}
 
 /* ── Score badge ── */
 .score-badge {
   font-family: 'Space Mono', monospace;
-  font-size: 3.5rem;
+  font-size: 3.2rem;
   font-weight: 700;
   text-align: center;
-  padding: 1.4rem 1rem 1rem;
-  border-radius: 14px;
+  padding: 1.3rem 1rem .9rem;
+  border-radius: 12px;
   border: 2px solid;
   line-height: 1.1;
 }
-.score-low  { color:#FF6B35; border-color:rgba(255,107,53,.35); background:rgba(255,107,53,.07); }
-.score-mid  { color:#FFD166; border-color:rgba(255,209,102,.35);background:rgba(255,209,102,.07);}
-.score-high { color:#00D4AA; border-color:rgba(0,212,170,.35);  background:rgba(0,212,170,.07); }
-.score-pro  { color:#00f0c0; border-color:rgba(0,240,192,.45);  background:rgba(0,240,192,.09); }
+.score-low  { color:#FF6B35; border-color:rgba(255,107,53,.3); background:rgba(255,107,53,.06); }
+.score-mid  { color:#FFD166; border-color:rgba(255,209,102,.3);background:rgba(255,209,102,.06);}
+.score-high { color:#00D4AA; border-color:rgba(0,212,170,.3);  background:rgba(0,212,170,.06); }
+.score-pro  { color:#00f0c0; border-color:rgba(0,240,192,.4);  background:rgba(0,240,192,.08); }
 
-/* ── Feature progress bars ── */
-.fb-wrap { background:rgba(0,212,170,.08); border-radius:5px; height:8px; width:100%; margin:5px 0 12px; }
-.fb-fill  { border-radius:5px; height:8px; background:linear-gradient(90deg,#00D4AA,#00f0c0); }
-.fb-fill-warn { background:linear-gradient(90deg,#FFD166,#ffba00); }
-.fb-fill-bad  { background:linear-gradient(90deg,#FF6B35,#ff4f00); }
+/* ── Progress bars ── */
+.fb-wrap { background:rgba(0,212,170,.07); border-radius:4px; height:7px; width:100%; margin:5px 0 10px; }
+.fb-fill      { border-radius:4px; height:7px; background:linear-gradient(90deg,#00D4AA,#00f0c0); }
+.fb-fill-warn { border-radius:4px; height:7px; background:linear-gradient(90deg,#FFD166,#ffba00); }
+.fb-fill-bad  { border-radius:4px; height:7px; background:linear-gradient(90deg,#FF6B35,#ff4f00); }
 
 /* ── Filler highlight ── */
-.filler { background:rgba(255,107,53,.22); color:#FF6B35; border-radius:4px;
-          padding:1px 4px; font-weight:600; }
+.filler {
+  background: rgba(255,107,53,.18);
+  color: #FF6B35;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-weight: 600;
+}
 
-/* ── Transcript box ── */
+/* ── Card surfaces ── */
+.surface {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.3rem;
+  margin-bottom: .6rem;
+}
+
+/* ── Transcript ── */
 .transcript-box {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 1.3rem 1.6rem;
+  padding: 1.2rem 1.5rem;
   line-height: 2;
-  font-size: .95rem;
+  font-size: .92rem;
 }
 
 /* ── Feedback card ── */
@@ -133,30 +157,168 @@ h3 { font-family:'Space Mono',monospace !important; color:var(--accent) !importa
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 1.1rem 1.4rem;
-  margin-bottom: .75rem;
-  font-size: .9rem;
+  padding: 1rem 1.3rem;
+  margin-bottom: .6rem;
+  font-size: .88rem;
   line-height: 1.65;
 }
-.fb-card-groq {
-  border-color: rgba(0,212,170,.4);
-  background: rgba(0,212,170,.05);
+.fb-card-ai { border-color:rgba(0,212,170,.35); background:rgba(0,212,170,.04); }
+
+/* ── Table rows ── */
+.tr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: .4rem 0;
+  border-bottom: 1px solid rgba(0,212,170,.08);
+  font-size: .84rem;
+}
+.tr-pass { color:#00D4AA; font-family:'Space Mono',monospace; font-size:.79rem; }
+.tr-fail { color:#FF6B35; font-family:'Space Mono',monospace; font-size:.79rem; }
+
+/* ── User identity ── */
+.identity-bar {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .6rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  font-family: 'Space Mono', monospace;
+  font-size: .8rem;
+  margin-bottom: .5rem;
+}
+.identity-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
 }
 
-/* ── Benchmark row ── */
-.bm-row { display:flex; justify-content:space-between; align-items:center;
-          padding:.45rem 0; border-bottom:1px solid rgba(0,212,170,.1); font-size:.86rem; }
-.bm-pass { color:#00D4AA; font-family:'Space Mono',monospace; font-size:.82rem; }
-.bm-fail { color:#FF6B35; font-family:'Space Mono',monospace; font-size:.82rem; }
+/* ── Sidebar section labels ── */
+.sb-label {
+  font-size: .67rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-family: 'Space Mono', monospace;
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.sb-label::after { content:''; flex:1; height:1px; background:var(--border); }
 
-/* ── Input area ── */
+/* ── Key card in sidebar ── */
+.key-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin-bottom: 7px;
+}
+.key-card-head {
+  font-size: .69rem;
+  color: var(--gray);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.badge {
+  font-size: .6rem;
+  padding: 1px 6px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.badge-free { background:rgba(0,212,170,.15); color:var(--accent); }
+.badge-opt  { background:rgba(136,146,164,.12); color:var(--gray); }
+
+/* ── Recording live indicator ── */
+@keyframes pulse-ring  { 0%{transform:scale(.8);opacity:1} 100%{transform:scale(2.4);opacity:0} }
+@keyframes pulse-dot   { 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes bar-bounce  { 0%,100%{height:5px} 50%{height:20px} }
+
+.rec-wrap {
+  display:flex; align-items:center; gap:14px;
+  background:rgba(255,107,53,.08); border:1px solid rgba(255,107,53,.3);
+  border-radius:10px; padding:13px 16px; margin:10px 0;
+}
+.rec-dot-wrap { position:relative; width:14px; height:14px; flex-shrink:0; }
+.rec-dot  { position:absolute; inset:0; background:#FF6B35; border-radius:50%; animation:pulse-dot 1.2s ease-in-out infinite; }
+.rec-ring { position:absolute; inset:0; border:2px solid #FF6B35; border-radius:50%; animation:pulse-ring 1.2s ease-out infinite; }
+.rec-bars { display:flex; align-items:center; gap:3px; height:24px; }
+.rec-bar  { width:3px; background:#FF6B35; border-radius:2px; animation:bar-bounce .8s ease-in-out infinite; }
+.rec-bar:nth-child(1){animation-delay:0s}
+.rec-bar:nth-child(2){animation-delay:.13s}
+.rec-bar:nth-child(3){animation-delay:.26s}
+.rec-bar:nth-child(4){animation-delay:.39s}
+.rec-bar:nth-child(5){animation-delay:.13s}
+.rec-title { font-family:'Space Mono',monospace; font-size:.79rem; color:#FF6B35; letter-spacing:.07em; }
+.rec-sub   { font-size:.75rem; color:var(--gray); margin-top:2px; }
+
+/* ── Captured state ── */
+.captured {
+  background:rgba(0,212,170,.07); border:1px solid rgba(0,212,170,.28);
+  border-radius:10px; padding:11px 16px; margin:10px 0;
+  font-family:'Space Mono',monospace; font-size:.79rem; color:var(--accent);
+  display:flex; align-items:center; gap:10px;
+}
+.captured::before { content:'✓'; font-size:1rem; }
+
+/* ── Eyebrow ── */
+.eyebrow {
+  font-family: 'Space Mono', monospace;
+  font-size: .68rem;
+  color: var(--accent);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  margin-bottom: .9rem;
+}
+.eyebrow::before { content:''; width:32px; height:1px; background:var(--accent); }
+
+/* ── Feature eval cards ── */
+.eval-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  height: 100%;
+}
+.eval-title {
+  font-family: 'Space Mono', monospace;
+  font-size: .72rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: .5rem;
+}
+.eval-body { font-size: .8rem; color: var(--gray); line-height: 1.6; }
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab"] {
+  font-family: 'Space Mono', monospace;
+  font-size: .78rem;
+  letter-spacing: .03em;
+}
+.stTabs [aria-selected="true"] {
+  color: var(--accent) !important;
+  border-bottom-color: var(--accent) !important;
+}
+
+/* ── File uploader ── */
 [data-testid="stFileUploader"] {
   border: 2px dashed var(--border) !important;
   border-radius: 10px !important;
   background: var(--card) !important;
 }
-.stTabs [data-baseweb="tab"] { font-family:'Space Mono',monospace; font-size:.82rem; }
-.stTabs [aria-selected="true"] { color:var(--accent) !important; border-bottom-color:var(--accent) !important; }
 
 /* ── Buttons ── */
 .stButton > button {
@@ -164,163 +326,61 @@ h3 { font-family:'Space Mono',monospace !important; color:var(--accent) !importa
   border: 1px solid var(--border) !important;
   color: var(--light) !important;
   font-family: 'Space Mono', monospace !important;
-  font-size: .8rem !important;
+  font-size: .75rem !important;
   border-radius: 6px !important;
-  transition: all .2s !important;
+  transition: all .18s !important;
 }
-.stButton > button:hover { border-color: var(--accent) !important; color: var(--accent) !important; }
+.stButton > button:hover { border-color:var(--accent) !important; color:var(--accent) !important; }
 
 /* ── Progress bar ── */
 .stProgress > div > div > div > div { background: var(--accent) !important; }
-
-/* ── Alert/info ── */
-.stAlert { border-radius: 8px !important; font-size: .88rem !important; }
-
-/* ── Progress chart container ── */
-.progress-chart-wrap { background: var(--card); border:1px solid var(--border);
-                       border-radius:10px; padding:1rem; }
+.stAlert { border-radius:8px !important; font-size:.86rem !important; }
+code { font-family:'Space Mono',monospace !important; color:var(--accent) !important;
+       background:rgba(0,212,170,.07) !important; padding:.1em .35em; border-radius:3px; }
 
 /* ── Footer ── */
 .footer {
-  text-align:center; padding:2.5rem 0 1rem;
-  color:var(--gray); font-size:.75rem;
+  text-align:center; padding:2rem 0 1rem;
+  color:var(--gray); font-size:.72rem;
   font-family:'Space Mono',monospace;
   border-top:1px solid var(--border); margin-top:3rem;
-  letter-spacing:.04em;
+  letter-spacing:.04em; line-height:1.8;
 }
 
-/* ── Eyebrow label ── */
-.eyebrow {
-  font-family:'Space Mono',monospace;
-  font-size:.72rem; color:var(--accent);
-  letter-spacing:.15em; text-transform:uppercase;
-  display:flex; align-items:center; gap:.7rem; margin-bottom:1rem;
-}
-.eyebrow::before { content:''; display:inline-block; width:36px; height:1px; background:var(--accent); }
-
-/* ── Code ── */
-code { font-family:'Space Mono',monospace !important; color:var(--accent) !important;
-       background:rgba(0,212,170,.08) !important; padding:.1em .35em; border-radius:4px; }
-
-/* ── Recording live indicator ── */
-@keyframes pulse-ring {
-  0%   { transform: scale(0.8); opacity: 1; }
-  100% { transform: scale(2.2); opacity: 0; }
-}
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
-}
-@keyframes recording-bar {
-  0%,100% { height: 6px; }
-  25%     { height: 18px; }
-  50%     { height: 10px; }
-  75%     { height: 22px; }
-}
-.rec-indicator {
-  display: flex; align-items: center; gap: 12px;
-  background: rgba(255,107,53,.1); border: 1px solid rgba(255,107,53,.35);
-  border-radius: 10px; padding: 14px 18px; margin: 12px 0;
-}
-.rec-dot-wrap { position: relative; width: 14px; height: 14px; flex-shrink:0; }
-.rec-dot {
-  position: absolute; inset: 0;
-  background: #FF6B35; border-radius: 50%;
-  animation: pulse-dot 1.2s ease-in-out infinite;
-}
-.rec-ring {
-  position: absolute; inset: 0;
-  border: 2px solid #FF6B35; border-radius: 50%;
-  animation: pulse-ring 1.2s ease-out infinite;
-}
-.rec-bars { display:flex; align-items:center; gap:3px; height:24px; }
-.rec-bar {
-  width: 3px; background: #FF6B35; border-radius: 2px;
-  animation: recording-bar 0.8s ease-in-out infinite;
-}
-.rec-bar:nth-child(1) { animation-delay: 0s; }
-.rec-bar:nth-child(2) { animation-delay: 0.15s; }
-.rec-bar:nth-child(3) { animation-delay: 0.3s; }
-.rec-bar:nth-child(4) { animation-delay: 0.45s; }
-.rec-bar:nth-child(5) { animation-delay: 0.15s; }
-.rec-label {
-  font-family: 'Space Mono', monospace;
-  font-size: .82rem; color: #FF6B35; letter-spacing: .08em;
-}
-.rec-hint { font-size:.78rem; color:#8892A4; }
-
-/* ── Sidebar API keys section ── */
-.api-key-block {
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
-}
-.api-key-label {
-  font-size:.72rem; color:var(--gray); text-transform:uppercase;
-  letter-spacing:.07em; margin-bottom:4px; display:flex;
-  align-items:center; gap:6px;
-}
-.api-badge-free {
-  background: rgba(0,212,170,.15); color: var(--accent);
-  font-size:.65rem; padding:1px 6px; border-radius:20px;
-  letter-spacing:.05em; text-transform:uppercase;
-}
-.api-badge-opt {
-  background: rgba(136,146,164,.1); color: var(--gray);
-  font-size:.65rem; padding:1px 6px; border-radius:20px;
-  letter-spacing:.05em; text-transform:uppercase;
-}
-
-/* ── Sidebar section headers ── */
-.sidebar-section-head {
-  font-size:.7rem; color:var(--accent); text-transform:uppercase;
-  letter-spacing:.1em; font-family:'Space Mono',monospace;
-  margin: 4px 0 10px; display:flex; align-items:center; gap:8px;
-}
-.sidebar-section-head::after {
-  content:''; flex:1; height:1px; background:var(--border);
-}
-
-/* ── Responsive tabs ── */
-@media (max-width: 768px) {
-  .stTabs [data-baseweb="tab"] { font-size:.72rem !important; padding: 6px 8px !important; }
-  [data-testid="stMetricValue"] { font-size:1.4rem !important; }
-  .score-badge { font-size: 2.8rem !important; }
+/* ── Responsive ── */
+@media (max-width:768px) {
+  .stTabs [data-baseweb="tab"] { font-size:.68rem !important; padding:5px 7px !important; }
+  [data-testid="stMetricValue"] { font-size:1.3rem !important; }
+  .score-badge { font-size:2.6rem !important; }
 }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── IMPORTS (lazy-safe) ───────────────────────────────────────────────────────
-from core.score    import (detect_fillers, annotate_transcript, compute_scores,
-                            BENCHMARKS, score_label, score_css, score_color)
-from core.storage  import get_history, add_session, clear_history, export_json, import_json
+# ── IMPORTS ───────────────────────────────────────────────────────────────────
+from core.score   import (detect_fillers, annotate_transcript, compute_scores,
+                           compute_articulation_score, BENCHMARKS,
+                           score_label, score_css, score_color)
+from core.storage import get_history, add_session, clear_history, export_json, import_json
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
-def bar_html(score: float) -> str:
-    pct  = int(score)
-    cls  = "fb-fill" if score >= 68 else ("fb-fill-warn" if score >= 50 else "fb-fill-bad")
-    return f'<div class="fb-wrap"><div class="{cls}" style="width:{pct}%"></div></div>'
-
-
-def _save_tmp(audio_bytes: bytes, suffix: str = ".wav") -> str:
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-        f.write(audio_bytes)
-        return f.name
+def bar_html(score: float, width: str = "100%") -> str:
+    cls = "fb-fill" if score >= 68 else ("fb-fill-warn" if score >= 50 else "fb-fill-bad")
+    return (f'<div class="fb-wrap" style="width:{width}">'
+            f'<div class="{cls}" style="width:{int(score)}%"></div></div>')
 
 
 # ── DEMO RESULT ───────────────────────────────────────────────────────────────
 
 def make_demo() -> dict:
-    np.random.seed(7)
-    wpm         = 118.4
-    dur_s       = 48.0
-    dur_m       = dur_s / 60
-    pause_count = 6
+    wpm, dur_s = 118.4, 48.0
+    dur_m      = dur_s / 60
+    pause_count, filler_count = 6, 7
     pause_rate  = round(pause_count / dur_m, 2)
-    filler_count= 7
     filler_rate = round(filler_count / dur_m, 2)
+    art_rate    = round(wpm * dur_m / max(dur_s - 14.0, 1) * 60, 1)  # simulated
     scores      = compute_scores(wpm, pause_rate, filler_rate)
     transcript  = (
         "So, uh, I wanted to talk about the project timeline, you know, "
@@ -331,210 +391,239 @@ def make_demo() -> dict:
     )
     fm = detect_fillers(transcript)
     return {
-        "fluency_score": scores["fluency"],
-        "wpm": wpm, "pause_count": pause_count, "pause_rate": pause_rate,
-        "filler_count": filler_count, "filler_rate": filler_rate,
-        "duration_s": dur_s, "transcript": transcript,
-        "filler_matches": fm, "demo": True,
-        **{k: scores[k] for k in ("wpm_score","pause_score","filler_score")},
-        "pauses": [(3.1,3.6,.5),(9.4,10.1,.7),(17.2,17.9,.7),(24.1,24.7,.6),(31.0,31.7,.7),(38.0,38.5,.5)],
+        "fluency_score":    scores["fluency"],
+        "wpm":              wpm,
+        "wpm_score":        scores["wpm_score"],
+        "pause_count":      pause_count,
+        "pause_rate":       pause_rate,
+        "pause_score":      scores["pause_score"],
+        "filler_count":     filler_count,
+        "filler_rate":      filler_rate,
+        "filler_score":     scores["filler_score"],
+        "articulation_rate":art_rate,
+        "art_score":        compute_articulation_score(art_rate),
+        "pitch_std":        38.4,
+        "pitch_score":      74.0,
+        "confidence":       68.5,
+        "duration_s":       dur_s,
+        "transcript":       transcript,
+        "filler_matches":   fm,
+        "demo":             True,
+        "pauses": [(3.1,3.6,.5),(9.4,10.1,.7),(17.2,17.9,.7),
+                   (24.1,24.7,.6),(31.0,31.7,.7),(38.0,38.5,.5)],
         "y": None, "sr": 16000,
     }
 
 
-# ── SIDEBAR ───────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR
+# ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("### 🎙️ Fluency Analyzer")
     st.markdown(
-        "<span style='font-size:.75rem;color:#8892A4;font-family:Space Mono,monospace'>"
-        "Project 03 · Palencia Research</span>",
+        "<div style='font-family:Space Mono,monospace;font-size:.95rem;"
+        "color:#00D4AA;margin-bottom:2px'>Speech Fluency Analyzer</div>"
+        "<div style='font-size:.72rem;color:#8892A4;font-family:Space Mono,monospace;"
+        "margin-bottom:12px'>Project 03 · Palencia Research</div>",
         unsafe_allow_html=True,
     )
     st.divider()
 
-    # ── API Keys ──
-    st.markdown('<div class="sidebar-section-head">API Keys</div>', unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="api-key-block">
-      <div class="api-key-label">
-        OpenAI Whisper
-        <span class="api-badge-opt">Optional</span>
-      </div>
-      <div style='font-size:.75rem;color:#8892A4;margin-bottom:6px'>
-        Faster transcription (~5s vs ~30s local)
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-    openai_key = st.text_input("openai_key", type="password",
-                                placeholder="sk-…",
-                                label_visibility="collapsed")
-
-    st.markdown("""
-    <div class="api-key-block" style="margin-top:8px">
-      <div class="api-key-label">
-        Groq AI Coaching
-        <span class="api-badge-free">Free</span>
-      </div>
-      <div style='font-size:.75rem;color:#8892A4;margin-bottom:6px'>
-        AI feedback via Llama-3.3 · console.groq.com
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-    groq_key = st.text_input("groq_key", type="password",
-                              placeholder="gsk_…",
-                              label_visibility="collapsed")
-
+    # ── User identity ──────────────────────────────────────────────────────
+    st.markdown('<div class="sb-label">Identity</div>', unsafe_allow_html=True)
+    username = st.text_input(
+        "username_input",
+        value=st.session_state.get("username", ""),
+        placeholder="Enter your name or username",
+        label_visibility="collapsed",
+    ).strip() or "default"
+    st.session_state["username"] = username
     st.markdown(
-        "<div style='font-size:.72rem;color:rgba(136,146,164,.6);margin-top:4px'>"
-        "All keys are optional. The app runs fully free without them.</div>",
+        f"<div style='font-size:.72rem;color:#8892A4;margin-top:2px;margin-bottom:8px'>"
+        f"Progress is saved under <code>{username}</code></div>",
         unsafe_allow_html=True,
     )
 
-    # Fall back to Streamlit secrets
+    st.divider()
+
+    # ── API Keys ───────────────────────────────────────────────────────────
+    st.markdown('<div class="sb-label">API Keys</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="key-card">
+      <div class="key-card-head">
+        OpenAI Whisper
+        <span class="badge badge-opt">Optional</span>
+      </div>
+      <div style='font-size:.72rem;color:#8892A4;margin-bottom:5px'>
+        Faster transcription (~5 s vs ~30 s local)
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    openai_key = st.text_input("ok", type="password", placeholder="sk-…",
+                                label_visibility="collapsed")
+
+    st.markdown("""
+    <div class="key-card">
+      <div class="key-card-head">
+        Groq  /  Llama-3.3
+        <span class="badge badge-free">Free</span>
+      </div>
+      <div style='font-size:.72rem;color:#8892A4;margin-bottom:5px'>
+        AI coaching · console.groq.com
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    groq_key = st.text_input("gk", type="password", placeholder="gsk_…",
+                              label_visibility="collapsed")
+
+    st.markdown(
+        "<div style='font-size:.69rem;color:rgba(136,146,164,.55);margin-top:3px'>"
+        "The app runs fully free without any keys.</div>",
+        unsafe_allow_html=True,
+    )
+
     openai_key = openai_key or st.secrets.get("OPENAI_API_KEY", "")
     groq_key   = groq_key   or st.secrets.get("GROQ_API_KEY",   "")
 
     st.divider()
 
-    # ── Settings ──
-    st.markdown('<div class="sidebar-section-head">Settings</div>', unsafe_allow_html=True)
-    benchmark   = st.selectbox("Benchmark", list(BENCHMARKS.keys()), index=0)
-    silence_db  = st.slider("Silence threshold (dB)", 15, 45, 30,
-                             help="Lower = more sensitive to quiet speech")
-    min_pause   = st.slider("Min pause (ms)", 200, 800, 400, step=50,
-                             help="Pauses shorter than this are ignored")
-    model_size  = st.selectbox("Local Whisper model",
-                                ["tiny", "base", "small"],
-                                index=0,
-                                help="tiny = fastest · base = better · small = best accuracy")
+    # ── Settings ───────────────────────────────────────────────────────────
+    st.markdown('<div class="sb-label">Settings</div>', unsafe_allow_html=True)
+    benchmark  = st.selectbox("Benchmark", list(BENCHMARKS.keys()), index=0)
+    silence_db = st.slider("Silence threshold (dB)", 15, 45, 30,
+                            help="Lower = more sensitive to quiet speech")
+    min_pause  = st.slider("Min pause (ms)", 200, 800, 400, step=50)
+    model_size = st.selectbox("Local Whisper model", ["tiny","base","small"], index=0,
+                               help="tiny = fastest  ·  small = most accurate")
 
     st.divider()
 
-    # ── Reference card ──
+    # ── Reference ──────────────────────────────────────────────────────────
     st.markdown("""
-    <div style='font-size:.76rem;color:#8892A4;line-height:1.8'>
-    <b style='color:#00D4AA'>Score formula</b><br>
+    <div style='font-size:.72rem;color:#8892A4;line-height:1.85'>
+    <span style='color:#00D4AA;font-weight:600'>Score formula</span><br>
     40% WPM · 35% Pause · 25% Filler<br><br>
-    <b style='color:#00D4AA'>Score targets</b><br>
-    Call center entry: ≥ 68<br>
-    Professional: ≥ 80<br><br>
-    <b style='color:#00D4AA'>Research basis</b><br>
-    Lennon (1990)<br>
-    Skehan (1996)<br>
-    Tavakoli & Skehan (2005)
+    <span style='color:#00D4AA;font-weight:600'>Targets</span><br>
+    Call center: ≥ 68  ·  Professional: ≥ 80<br><br>
+    <span style='color:#00D4AA;font-weight:600'>Research basis</span><br>
+    Lennon (1990) · Skehan (1996)<br>
+    Tavakoli & Skehan (2005)<br>
+    Kormos & Denes (2004) · Hincks (2005)
     </div>
     """, unsafe_allow_html=True)
 
     st.divider()
 
-    # ── History controls ──
-    st.markdown('<div class="sidebar-section-head">Session History</div>', unsafe_allow_html=True)
-    col_exp, col_clr = st.columns(2)
-    with col_exp:
-        st.download_button(
-            "⬇️ Export",
-            data=export_json(),
-            file_name="fluency_history.json",
-            mime="application/json",
-            use_container_width=True,
-            help="Download your full session history as JSON",
-        )
-    with col_clr:
-        if st.button("🗑️ Clear", use_container_width=True):
-            clear_history(); st.rerun()
+    # ── Session history controls ───────────────────────────────────────────
+    st.markdown('<div class="sb-label">Session History</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button("Export", data=export_json(username),
+                            file_name=f"fluency_{username}.json",
+                            mime="application/json", use_container_width=True)
+    with c2:
+        if st.button("Clear", use_container_width=True):
+            clear_history(username); st.rerun()
 
-    # ── Import ──
-    with st.expander("📥 Import previous history"):
+    with st.expander("Import previous history"):
         st.markdown(
-            "<div style='font-size:.75rem;color:#8892A4;margin-bottom:8px'>"
-            "Upload a previously exported <code>fluency_history.json</code> "
-            "to restore your progress.</div>",
+            "<div style='font-size:.72rem;color:#8892A4;margin-bottom:6px'>"
+            "Upload a previously exported <code>fluency_{username}.json</code>.</div>",
             unsafe_allow_html=True,
         )
-        uploaded_hist = st.file_uploader(
-            "history_json", type="json", label_visibility="collapsed",
-            help="Upload fluency_history.json"
-        )
-        if uploaded_hist:
-            ok, msg = import_json(uploaded_hist.read().decode())
+        hist_file = st.file_uploader("hf", type="json", label_visibility="collapsed")
+        if hist_file:
+            ok, msg = import_json(hist_file.read().decode(), username)
             (st.success if ok else st.error)(msg)
             if ok: st.rerun()
 
 
-# ── HEADER ────────────────────────────────────────────────────────────────────
-st.markdown('<div class="eyebrow">PROJECT 03 · SPEECH SCIENCE · L2 ASSESSMENT</div>',
+# ══════════════════════════════════════════════════════════════════════════════
+# HEADER
+# ══════════════════════════════════════════════════════════════════════════════
+st.markdown('<div class="eyebrow">Project 03  ·  Speech Science  ·  L2 Assessment</div>',
             unsafe_allow_html=True)
 st.title("Speech Fluency Analyzer")
+
+# Active user indicator
+if username != "default":
+    st.markdown(
+        f'<div class="identity-bar">'
+        f'<div class="identity-dot"></div>'
+        f'<span style="color:#8892A4">Logged in as</span>'
+        f'<span style="color:#F0F4F8">{username}</span>'
+        f'<span style="color:#8892A4;margin-left:auto;font-size:.72rem">'
+        f'{len(get_history(username))} session(s) saved</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
 st.markdown(
-    "<p style='color:#8892A4;font-size:.95rem;max-width:720px;margin-top:-.4rem;line-height:1.75'>"
-    "Upload or record a 30–60 second English speech sample. The analyzer automatically "
-    "extracts three acoustic features "
-    "(speaking rate in words per minute, pause frequency, and filler word rate) "
-    "and combines them into a single <b style='color:#F0F4F8'>Fluency Score from 0 to 100</b>, "
-    "calibrated against professional call center and native speaker benchmarks. "
-    "You receive a score breakdown, an annotated transcript with fillers highlighted, "
-    "a waveform with pause markers, specific coaching advice, and a progress dashboard "
-    "that tracks your improvement across sessions. "
-    "<b style='color:#00D4AA'>No API key required to get started.</b>"
+    "<p style='color:#8892A4;font-size:.92rem;max-width:720px;"
+    "margin-top:-.3rem;line-height:1.75'>"
+    "Upload or record a 30–60 second English speech sample. The analyzer extracts "
+    "six acoustic and linguistic features "
+    "(speaking rate, articulation rate, pause frequency, pitch variation, "
+    "filler word rate, and transcription confidence) "
+    "and returns a composite <b style='color:#F0F4F8'>Fluency Score from 0 to 100</b> "
+    "calibrated against professional and call center benchmarks. "
+    "Results include an annotated transcript, waveform, coaching feedback, "
+    "a progress dashboard, and a branded PDF report. "
+    "<b style='color:#00D4AA'>No API key required.</b>"
     "</p>",
     unsafe_allow_html=True,
 )
 
-# ── What it evaluates info cards ──
-ev1, ev2, ev3 = st.columns(3)
-for col, icon, title, body in [
-    (ev1, "🗣", "Speaking Rate (WPM)",
-     "Measures how many words you speak per minute. Native English ranges from 130–180 WPM. "
-     "Below 100 WPM signals disfluency. Above 185 WPM reduces clarity."),
-    (ev2, "⏸", "Pause Frequency",
-     "Counts involuntary silences longer than 400ms per minute. "
-     "L2 speakers pause 3–4× more than native speakers. "
-     "Pauses inside sentences disrupt comprehension most."),
-    (ev3, "💬", "Filler Word Rate",
-     "Detects 'uh', 'um', 'like', 'you know', 'basically' and similar disfluency markers. "
-     "High filler rate signals difficulty with real-time planning. "
-     "Professional target: fewer than 2 per minute."),
+# ── Feature evaluation cards ──────────────────────────────────────────────────
+c1, c2, c3 = st.columns(3)
+for col, title, body in [
+    (c1, "Speaking Rate  (WPM  /  Articulation Rate)",
+     "Measures words per minute over total duration, and separately over speech-only time "
+     "(excluding pauses). Native English: 130–180 WPM. "
+     "Articulation rate removes pauses for a purer fluency signal."),
+    (c2, "Pause Frequency  /  Pitch Variation",
+     "Counts involuntary gaps longer than 400 ms per minute. "
+     "Also extracts fundamental frequency standard deviation — "
+     "monotone delivery signals low engagement and reduced fluency."),
+    (c3, "Filler Words  /  Transcription Confidence",
+     "Detects 'uh', 'um', 'like', 'you know', and similar markers. "
+     "Also reports Whisper's phoneme-level confidence as a proxy "
+     "for articulation clarity and pronunciation precision."),
 ]:
     with col:
         col.markdown(
-            f"<div style='background:#162030;border:1px solid rgba(0,212,170,.15);"
-            f"border-radius:10px;padding:1rem 1.1rem;height:100%'>"
-            f"<div style='font-size:1.3rem;margin-bottom:.4rem'>{icon}</div>"
-            f"<div style='font-family:Space Mono,monospace;font-size:.78rem;"
-            f"color:#00D4AA;text-transform:uppercase;letter-spacing:.06em;"
-            f"margin-bottom:.5rem'>{title}</div>"
-            f"<div style='font-size:.82rem;color:#8892A4;line-height:1.6'>{body}</div>"
-            f"</div>",
+            f'<div class="eval-card">'
+            f'<div class="eval-title">{title}</div>'
+            f'<div class="eval-body">{body}</div>'
+            f'</div>',
             unsafe_allow_html=True,
         )
 
 st.divider()
 
 
-# ── INPUT TABS ────────────────────────────────────────────────────────────────
-tab_mic, tab_upload, tab_demo = st.tabs(
-    ["🎙️  Record (live microphone)", "📁  Upload file", "🧪  Demo mode"]
-)
+# ══════════════════════════════════════════════════════════════════════════════
+# INPUT TABS
+# ══════════════════════════════════════════════════════════════════════════════
+tab_mic, tab_upload, tab_demo = st.tabs([
+    "  Record (microphone)  ",
+    "  Upload file  ",
+    "  Demo  ",
+])
 
 audio_bytes: bytes | None = None
 audio_suffix = ".wav"
 
-# ── TAB 1: MICROPHONE ─────────────────────────────────────────────────────────
+# ── Microphone ────────────────────────────────────────────────────────────────
 with tab_mic:
     st.markdown(
-        "<p style='color:#8892A4;font-size:.88rem'>"
-        "Click the microphone button below to start recording. "
-        "Speak clearly for 30–60 seconds, then click it again to stop.</p>",
+        "<p style='color:#8892A4;font-size:.85rem;margin-bottom:.5rem'>"
+        "Click the microphone button to start. Speak for 30–60 seconds, "
+        "then click again to stop. Recommended: Chrome or Edge.</p>",
         unsafe_allow_html=True,
     )
     try:
         from audio_recorder_streamlit import audio_recorder
-
-        # State tracking for live indicator
-        if "is_recording" not in st.session_state:
-            st.session_state["is_recording"] = False
-
         recorded = audio_recorder(
             text="",
             recording_color="#FF6B35",
@@ -543,79 +632,63 @@ with tab_mic:
             pause_threshold=3.0,
             sample_rate=16000,
         )
-
-        # Show live recording indicator while recording (before audio is returned)
         if not recorded:
             st.markdown("""
-            <div class="rec-indicator">
-              <div class="rec-dot-wrap">
-                <div class="rec-ring"></div>
-                <div class="rec-dot"></div>
-              </div>
+            <div class="rec-wrap">
+              <div class="rec-dot-wrap"><div class="rec-ring"></div><div class="rec-dot"></div></div>
               <div class="rec-bars">
-                <div class="rec-bar"></div>
-                <div class="rec-bar"></div>
-                <div class="rec-bar"></div>
-                <div class="rec-bar"></div>
-                <div class="rec-bar"></div>
+                <div class="rec-bar"></div><div class="rec-bar"></div>
+                <div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div>
               </div>
               <div>
-                <div class="rec-label">CLICK MIC TO START · CLICK AGAIN TO STOP</div>
-                <div class="rec-hint">Recommended: 30–60 seconds of natural English speech</div>
+                <div class="rec-title">CLICK MIC TO START  ·  CLICK AGAIN TO STOP</div>
+                <div class="rec-sub">Recommended: 30–60 seconds of natural English speech</div>
               </div>
             </div>
             """, unsafe_allow_html=True)
         else:
-            audio_bytes  = recorded
-            audio_suffix = ".wav"
-            st.markdown("""
-            <div style='background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.3);
-                        border-radius:10px;padding:12px 16px;margin:10px 0;
-                        display:flex;align-items:center;gap:10px'>
-              <span style='font-size:1.1rem'>✅</span>
-              <span style='font-family:Space Mono,monospace;font-size:.82rem;color:#00D4AA'>
-                Recording captured (click Analyse Speech below)
-              </span>
-            </div>
-            """, unsafe_allow_html=True)
+            audio_bytes, audio_suffix = recorded, ".wav"
+            st.markdown(
+                '<div class="captured">Recording captured  —  click Analyse Speech below</div>',
+                unsafe_allow_html=True,
+            )
             st.audio(recorded, format="audio/wav")
-
     except ImportError:
         st.warning(
-            "The microphone recorder requires `audio-recorder-streamlit`. "
-            "Install it with: `pip install audio-recorder-streamlit`  \n"
-            "Use the **Upload file** tab in the meantime."
+            "Microphone recording requires `audio-recorder-streamlit`.  \n"
+            "Run `pip install audio-recorder-streamlit` then restart.  \n"
+            "Use the Upload tab in the meantime."
         )
 
-# ── TAB 2: FILE UPLOAD ────────────────────────────────────────────────────────
+# ── Upload ────────────────────────────────────────────────────────────────────
 with tab_upload:
     st.markdown(
-        "<p style='color:#8892A4;font-size:.88rem'>"
-        "WAV · MP3 · M4A · OGG  ·  Recommended: 30–60 seconds  ·  "
-        "Accented English is fully supported via Whisper.</p>",
+        "<p style='color:#8892A4;font-size:.85rem'>"
+        "WAV  ·  MP3  ·  M4A  ·  OGG  ·  Recommended: 30–60 seconds  ·  "
+        "Accented English fully supported.</p>",
         unsafe_allow_html=True,
     )
-    uploaded = st.file_uploader(
-        "Drop audio file here", type=["wav","mp3","m4a","ogg"],
-        label_visibility="collapsed",
-    )
+    uploaded = st.file_uploader("audio_upload", type=["wav","mp3","m4a","ogg"],
+                                 label_visibility="collapsed")
     if uploaded:
         audio_bytes  = uploaded.read()
         audio_suffix = "." + uploaded.name.rsplit(".", 1)[-1].lower()
         st.audio(audio_bytes, format=f"audio/{audio_suffix.lstrip('.')}")
 
-# ── TAB 3: DEMO ───────────────────────────────────────────────────────────────
+# ── Demo ──────────────────────────────────────────────────────────────────────
 with tab_demo:
     st.markdown(
-        "<p style='color:#8892A4;font-size:.88rem'>"
-        "No microphone or file needed. Explore the full dashboard with a "
-        "synthetic 48-second English sample (pre-loaded with realistic metrics).</p>",
+        "<p style='color:#8892A4;font-size:.85rem'>"
+        "Explore the full dashboard instantly with a pre-loaded synthetic sample "
+        "(48 s, realistic metrics, no API key or microphone needed).</p>",
         unsafe_allow_html=True,
     )
-    run_demo = st.button("▶  Run demo analysis", use_container_width=False)
+    run_demo = st.button("Run demo analysis")
 
 
-# ── ANALYSE BUTTON ────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ANALYSIS
+# ══════════════════════════════════════════════════════════════════════════════
 st.divider()
 result: dict | None = None
 
@@ -623,221 +696,267 @@ if run_demo:
     result = make_demo()
 
 elif audio_bytes:
-    col_btn, col_info = st.columns([1, 3])
-    with col_btn:
-        run_analysis = st.button("▶  Analyse speech", use_container_width=True, type="primary")
-    with col_info:
+    c_btn, c_info = st.columns([1, 3])
+    with c_btn:
+        run_analysis = st.button("Analyse Speech", type="primary", use_container_width=True)
+    with c_info:
         backend = "OpenAI Whisper API" if openai_key else f"Local Whisper ({model_size})"
-        ai_tier = "Groq AI coaching" if groq_key else "Rule-based coaching (free)"
+        ai_tier = "Groq AI coaching" if groq_key else "Rule-based coaching"
         st.markdown(
-            f"<span style='font-size:.8rem;color:#8892A4'>"
-            f"Transcription: <b style='color:#00D4AA'>{backend}</b> · "
+            f"<span style='font-size:.78rem;color:#8892A4'>"
+            f"Transcription: <b style='color:#00D4AA'>{backend}</b>  ·  "
             f"Feedback: <b style='color:#00D4AA'>{ai_tier}</b></span>",
             unsafe_allow_html=True,
         )
     if not run_analysis:
         st.stop()
 
-    with st.status("🎙️ Analysing your speech…", expanded=True) as status:
+    with st.status("Analysing speech…", expanded=True) as status:
         try:
             import librosa
-            from core.analyze    import load_audio, detect_pauses, render_waveform
+            from core.analyze    import (load_audio, detect_pauses, render_waveform,
+                                         extract_pitch_variation, extract_whisper_confidence)
             from core.transcribe import transcribe
 
-            # 1. Load audio
-            st.write("⏳ Loading audio…")
+            st.write("Loading audio…")
             y, sr, duration_s, tmp_path = load_audio(audio_bytes, suffix=audio_suffix)
             duration_m = duration_s / 60
 
-            # 2. Pause detection
-            st.write("🔍 Detecting pauses…")
-            pause_count, total_pause_s, pauses, _ = detect_pauses(
-                y, sr,
-                silence_db=silence_db,
-                min_pause_s=min_pause / 1000,
+            st.write("Detecting pauses and extracting pitch…")
+            pause_count, total_pause_s, pauses, speech_time_s, _ = detect_pauses(
+                y, sr, silence_db=silence_db, min_pause_s=min_pause / 1000,
             )
-            pause_rate = round(pause_count / max(duration_m, 0.01), 2)
+            pause_rate       = round(pause_count / max(duration_m, .01), 2)
+            pitch_std, pitch_score = extract_pitch_variation(y, sr)
 
-            # 3. Transcription
-            st.write("📝 Transcribing…")
-            transcript = transcribe(
-                tmp_path,
-                use_api=bool(openai_key),
-                api_key=openai_key or None,
-                model_size=model_size,
-            )
+            st.write("Transcribing…")
+            # Local Whisper returns a dict with segments; API returns a str
+            if openai_key:
+                from core.transcribe import transcribe_api
+                transcript_raw = transcribe_api(tmp_path, openai_key)
+                whisper_result = None
+            else:
+                import whisper as _whisper
+                from core.transcribe import _model_cache
+                if model_size not in _model_cache:
+                    _model_cache[model_size] = _whisper.load_model(model_size)
+                whisper_result = _model_cache[model_size].transcribe(
+                    tmp_path, language="en", fp16=False
+                )
+                transcript_raw = whisper_result["text"].strip()
             os.unlink(tmp_path)
 
-            # 4. WPM + fillers
-            st.write("📊 Computing features…")
-            word_count   = len(transcript.split())
-            wpm          = round(word_count / max(duration_m, 0.01), 1)
-            filler_matches = detect_fillers(transcript)
-            filler_count = len(filler_matches)
-            filler_rate  = round(filler_count / max(duration_m, 0.01), 2)
+            st.write("Computing features…")
+            word_count      = len(transcript_raw.split())
+            wpm             = round(word_count / max(duration_m, .01), 1)
+            art_rate        = round(word_count / max(speech_time_s / 60, .01), 1)
+            filler_matches  = detect_fillers(transcript_raw)
+            filler_count    = len(filler_matches)
+            filler_rate     = round(filler_count / max(duration_m, .01), 2)
+            confidence      = extract_whisper_confidence(whisper_result)
+            art_score       = compute_articulation_score(art_rate)
 
-            # 5. Score
             scores = compute_scores(wpm, pause_rate, filler_rate)
 
             result = {
-                "fluency_score": scores["fluency"],
-                "wpm": wpm, "pause_count": pause_count, "pause_rate": pause_rate,
-                "filler_count": filler_count, "filler_rate": filler_rate,
-                "duration_s": duration_s, "transcript": transcript,
-                "filler_matches": filler_matches, "demo": False,
-                "wpm_score": scores["wpm_score"],
-                "pause_score": scores["pause_score"],
-                "filler_score": scores["filler_score"],
-                "pauses": pauses, "y": y, "sr": sr,
+                "fluency_score":    scores["fluency"],
+                "wpm":              wpm,
+                "wpm_score":        scores["wpm_score"],
+                "pause_count":      pause_count,
+                "pause_rate":       pause_rate,
+                "pause_score":      scores["pause_score"],
+                "filler_count":     filler_count,
+                "filler_rate":      filler_rate,
+                "filler_score":     scores["filler_score"],
+                "articulation_rate":art_rate,
+                "art_score":        art_score,
+                "pitch_std":        pitch_std,
+                "pitch_score":      pitch_score,
+                "confidence":       confidence,
+                "duration_s":       duration_s,
+                "transcript":       transcript_raw,
+                "filler_matches":   filler_matches,
+                "demo":             False,
+                "pauses":           pauses,
+                "y":                y,
+                "sr":               sr,
             }
-            add_session(result, benchmark)
-            status.update(label="✅ Analysis complete!", state="complete")
+            add_session(result, benchmark, username)
+            status.update(label="Analysis complete", state="complete")
 
         except ImportError as e:
-            status.update(label="❌ Missing package", state="error")
-            st.error(f"Missing dependency: **{e}**  \nRun `pip install -r requirements.txt`")
+            status.update(label="Missing package", state="error")
+            st.error(f"Missing: **{e}** — run `pip install -r requirements.txt`")
             st.stop()
         except Exception as e:
-            status.update(label="❌ Analysis failed", state="error")
-            st.error(str(e))
-            st.stop()
+            status.update(label="Analysis failed", state="error")
+            st.error(str(e)); st.stop()
 
 else:
-    # ── Empty state ──
     st.markdown("""
-    <div style='background:#162030;border:1px solid rgba(0,212,170,.14);
-                border-radius:14px;padding:3rem;text-align:center;margin:1rem 0'>
-      <div style='font-size:3.5rem;margin-bottom:1rem'>🎙️</div>
-      <h3 style='color:#F0F4F8;margin-bottom:.5rem;font-family:Space Mono,monospace;font-size:1.1rem'>
-        Three ways to start
-      </h3>
-      <p style='color:#8892A4;font-size:.88rem;max-width:480px;margin:.8rem auto 0'>
-        <b style='color:#00D4AA'>Record</b> live via microphone ·
-        <b style='color:#00D4AA'>Upload</b> a WAV or MP3 ·
-        <b style='color:#00D4AA'>Demo</b> to explore the dashboard instantly
-      </p>
-      <p style='color:rgba(136,146,164,.6);font-size:.78rem;margin-top:1.5rem'>
-        No API key required · Fully free by default
-      </p>
+    <div style='background:#162030;border:1px solid rgba(0,212,170,.12);
+                border-radius:12px;padding:2.8rem 2rem;text-align:center;margin:1rem 0'>
+      <div style='font-family:Space Mono,monospace;font-size:1rem;
+                  color:#F0F4F8;margin-bottom:.6rem'>Three ways to begin</div>
+      <div style='color:#8892A4;font-size:.86rem;max-width:440px;margin:0 auto;line-height:1.8'>
+        <b style='color:#00D4AA'>Record</b>  —  live via browser microphone<br>
+        <b style='color:#00D4AA'>Upload</b>  —  WAV, MP3, M4A, or OGG file<br>
+        <b style='color:#00D4AA'>Demo</b>  —  explore the dashboard instantly
+      </div>
+      <div style='color:rgba(136,146,164,.45);font-size:.74rem;margin-top:1.4rem'>
+        No API key required  ·  Fully free by default
+      </div>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # RESULTS DASHBOARD
-# ════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 r  = result
 sc = r["fluency_score"]
 bm = BENCHMARKS[benchmark]
 
-# ── SECTION 1: Score + Feature Metrics ───────────────────────────────────────
-st.markdown("## Score Overview")
-col_sc, col_mx = st.columns([1, 2], gap="large")
 
-with col_sc:
-    css_cls = score_css(sc)
-    lbl     = score_label(sc)
-    clr     = score_color(sc)
+# ── SECTION 1: Score overview ─────────────────────────────────────────────────
+st.markdown("## Score Overview")
+col_score, col_metrics = st.columns([1, 2], gap="large")
+
+with col_score:
+    lbl = score_label(sc)
+    clr = score_color(sc)
     st.markdown(
-        f'<div class="score-badge {css_cls}">'
+        f'<div class="score-badge {score_css(sc)}">'
         f'{sc}<br>'
-        f'<span style="font-size:.9rem;letter-spacing:.08em;opacity:.85">{lbl}</span>'
+        f'<span style="font-size:.85rem;letter-spacing:.07em;opacity:.8">{lbl}</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
-    delta = round(sc - bm["min_score"], 1)
-    sign  = "+" if delta >= 0 else ""
-    d_color = "#00D4AA" if delta >= 0 else "#FF6B35"
+    delta     = round(sc - bm["min_score"], 1)
+    d_color   = "#00D4AA" if delta >= 0 else "#FF6B35"
+    d_sign    = "+" if delta >= 0 else ""
     st.markdown(
         f"<div style='text-align:center;font-family:Space Mono,monospace;"
-        f"font-size:.82rem;color:{d_color};margin-top:.3rem'>"
-        f"{sign}{delta} vs {benchmark}</div>",
+        f"font-size:.78rem;color:{d_color};margin-top:.3rem'>"
+        f"{d_sign}{delta} vs {benchmark}</div>",
         unsafe_allow_html=True,
     )
 
-with col_mx:
-    r1c1, r1c2, r1c3 = st.columns(3)
-    r1c1.metric("Words / Min",   f"{r['wpm']:.0f}",        help="Primary fluency indicator · Lennon (1990)")
-    r1c2.metric("Pauses / Min",  f"{r['pause_rate']:.1f}",  help="Pauses >400ms · Tavakoli & Skehan (2005)")
-    r1c3.metric("Fillers / Min", f"{r['filler_rate']:.1f}", help="Disfluency markers · Skehan (1996)")
-
-    dur_m = int(r["duration_s"] // 60)
-    dur_s = int(r["duration_s"] % 60)
-    r2c1, r2c2, r2c3 = st.columns(3)
-    r2c1.metric("Duration",     f"{dur_m}m {dur_s}s")
-    r2c2.metric("Pause Count",  str(r["pause_count"]))
-    r2c3.metric("Filler Count", str(r["filler_count"]))
+with col_metrics:
+    r1, r2, r3 = st.columns(3)
+    r1.metric("Words / Min",   f"{r['wpm']:.0f}")
+    r2.metric("Pauses / Min",  f"{r['pause_rate']:.1f}")
+    r3.metric("Fillers / Min", f"{r['filler_rate']:.1f}")
+    dur_m2 = int(r["duration_s"] // 60)
+    dur_s2 = int(r["duration_s"] % 60)
+    r4, r5, r6 = st.columns(3)
+    r4.metric("Duration",      f"{dur_m2}m {dur_s2}s")
+    r5.metric("Pause Count",   str(r["pause_count"]))
+    r6.metric("Filler Count",  str(r["filler_count"]))
 
 st.divider()
 
-# ── SECTION 2: Score Decomposition ───────────────────────────────────────────
-st.markdown("## Score Decomposition")
+
+# ── SECTION 2: Core score decomposition ──────────────────────────────────────
+st.markdown("## Score Decomposition  (Core Formula)")
 dc1, dc2, dc3 = st.columns(3)
 
-def decomp_block(col, icon, label, raw, weight, note):
-    with col:
-        pct   = int(raw)
-        bar_c = "fb-fill" if raw >= 68 else ("fb-fill-warn" if raw >= 50 else "fb-fill-bad")
-        col.markdown(
-            f"<div style='font-size:.78rem;color:#8892A4;text-transform:uppercase;"
-            f"letter-spacing:.06em'>{icon} {label}</div>"
-            f"<div style='font-family:Space Mono,monospace;font-size:1.6rem;"
-            f"color:#00D4AA'>{raw:.0f}<span style='font-size:.85rem;color:#8892A4'>/100</span>"
-            f"<span style='font-size:.75rem;color:#8892A4;margin-left:.5rem'>×{weight}</span></div>"
-            f'<div class="fb-wrap"><div class="{bar_c}" style="width:{pct}%"></div></div>'
-            f"<div style='font-size:.78rem;color:#8892A4'>{note}</div>",
-            unsafe_allow_html=True,
-        )
+def decomp_block(col, title, raw, weight, note):
+    pct   = int(raw)
+    bar_c = "fb-fill" if raw >= 68 else ("fb-fill-warn" if raw >= 50 else "fb-fill-bad")
+    col.markdown(
+        f"<div style='font-size:.7rem;color:#8892A4;text-transform:uppercase;"
+        f"letter-spacing:.06em'>{title}</div>"
+        f"<div style='font-family:Space Mono,monospace;font-size:1.55rem;color:#00D4AA'>"
+        f"{raw:.0f}<span style='font-size:.8rem;color:#8892A4'>/100</span>"
+        f"<span style='font-size:.7rem;color:#8892A4;margin-left:.5rem'>× {weight}</span></div>"
+        f'<div class="fb-wrap"><div class="{bar_c}" style="width:{pct}%"></div></div>'
+        f"<div style='font-size:.75rem;color:#8892A4'>{note}</div>",
+        unsafe_allow_html=True,
+    )
 
-decomp_block(dc1, "🗣", "Speaking Rate",  r["wpm_score"],    "0.40", f"{r['wpm']:.0f} WPM · target 140–160")
-decomp_block(dc2, "⏸", "Pause Control",  r["pause_score"],  "0.35", f"{r['pause_count']} pauses detected")
-decomp_block(dc3, "💬", "Filler Words",   r["filler_score"], "0.25", f"{r['filler_count']} fillers found")
+decomp_block(dc1, "Speaking Rate",  r["wpm_score"],    "0.40", f"{r['wpm']:.0f} WPM  ·  target 140–160")
+decomp_block(dc2, "Pause Control",  r["pause_score"],  "0.35", f"{r['pause_count']} pauses detected")
+decomp_block(dc3, "Filler Words",   r["filler_score"], "0.25", f"{r['filler_count']} fillers found")
 
 st.divider()
 
-# ── SECTION 3: Waveform ───────────────────────────────────────────────────────
+
+# ── SECTION 3: Extended acoustic features ────────────────────────────────────
+st.markdown("## Extended Acoustic Analysis")
+ec1, ec2, ec3 = st.columns(3)
+
+def ext_block(col, title, value_str, raw, note):
+    pct   = int(raw)
+    bar_c = "fb-fill" if raw >= 68 else ("fb-fill-warn" if raw >= 50 else "fb-fill-bad")
+    col.markdown(
+        f"<div style='font-size:.7rem;color:#8892A4;text-transform:uppercase;"
+        f"letter-spacing:.06em'>{title}</div>"
+        f"<div style='font-family:Space Mono,monospace;font-size:1.2rem;color:#00D4AA'>"
+        f"{value_str}</div>"
+        f"<div style='font-size:.72rem;color:#8892A4;margin-bottom:3px'>"
+        f"Score: {raw:.0f}/100</div>"
+        f'<div class="fb-wrap"><div class="{bar_c}" style="width:{pct}%"></div></div>'
+        f"<div style='font-size:.72rem;color:#8892A4'>{note}</div>",
+        unsafe_allow_html=True,
+    )
+
+ext_block(ec1, "Articulation Rate",
+          f"{r.get('articulation_rate',0):.0f} WPM",
+          r.get("art_score", 50),
+          "Speech-only WPM (pauses excluded)  ·  Kormos & Denes (2004)")
+ext_block(ec2, "Pitch Variation",
+          f"F0 std {r.get('pitch_std',0):.0f} Hz",
+          r.get("pitch_score", 50),
+          "F0 standard deviation  ·  Hincks (2005)")
+ext_block(ec3, "Transcription Confidence",
+          f"{r.get('confidence',50):.0f}/100",
+          r.get("confidence", 50),
+          "Whisper avg_logprob — phoneme clarity proxy")
+
+st.divider()
+
+
+# ── SECTION 4: Waveform ───────────────────────────────────────────────────────
 st.markdown("## Waveform  ·  Pause Annotation")
-if r.get("y") is not None and r["y"] is not None:
+if r.get("y") is not None:
     try:
         from core.analyze import render_waveform
-        fig = render_waveform(r["y"], r["sr"], r["pauses"])
-        st.pyplot(fig, use_container_width=True)
+        st.pyplot(render_waveform(r["y"], r["sr"], r["pauses"]),
+                  use_container_width=True)
     except Exception:
         st.info("Waveform rendering unavailable.")
 else:
     st.markdown(
-        '<div style="background:#162030;border:1px solid rgba(0,212,170,.15);'
-        'border-radius:8px;padding:1.2rem;text-align:center;color:#8892A4;font-size:.85rem">'
-        '〰️  Demo mode (waveform not available). Upload or record audio to see the annotated waveform.'
-        '</div>',
+        '<div style="background:#162030;border:1px solid rgba(0,212,170,.12);'
+        'border-radius:8px;padding:1.1rem;text-align:center;color:#8892A4;font-size:.82rem">'
+        'Demo mode  —  upload or record audio to see the annotated waveform.</div>',
         unsafe_allow_html=True,
     )
 
 st.divider()
 
-# ── SECTION 4: Annotated Transcript ──────────────────────────────────────────
+
+# ── SECTION 5: Annotated transcript ──────────────────────────────────────────
 st.markdown("## Annotated Transcript")
 filler_matches = r.get("filler_matches") or detect_fillers(r["transcript"])
 annotated      = annotate_transcript(r["transcript"], filler_matches)
+st.markdown(f'<div class="transcript-box">{annotated}</div>', unsafe_allow_html=True)
 st.markdown(
-    f'<div class="transcript-box">{annotated}</div>',
-    unsafe_allow_html=True,
-)
-st.markdown(
-    "<span style='font-size:.76rem;color:#8892A4'>"
-    "<span class='filler'>highlighted</span> = filler word</span>",
+    "<span style='font-size:.73rem;color:#8892A4'>"
+    "<span class='filler'>highlighted</span>  =  filler word detected</span>",
     unsafe_allow_html=True,
 )
 
 st.divider()
 
-# ── SECTION 5: Coaching Feedback ─────────────────────────────────────────────
+
+# ── SECTION 6: Coaching feedback ─────────────────────────────────────────────
 st.markdown("## Coaching Feedback")
 
 from core.feedback import rule_based_feedback, groq_coaching
 
-top_sorted = []
 fw: dict[str, int] = {}
 for m in filler_matches:
     w = m.group().lower()
@@ -848,143 +967,143 @@ fb = rule_based_feedback(
     wpm=r["wpm"], pause_rate=r["pause_rate"], filler_rate=r["filler_rate"],
     filler_count=r["filler_count"], filler_matches=filler_matches,
     wpm_score=r["wpm_score"], pause_score=r["pause_score"],
-    filler_score=r["filler_score"], fluency_score=r["fluency_score"],
+    filler_score=r["filler_score"], fluency_score=sc,
     transcript=r["transcript"], benchmark=benchmark,
 )
 
-# ── Overall banner ──
-banner_col = "#00D4AA" if sc >= 68 else ("#FFD166" if sc >= 50 else "#FF6B35")
+# Overall
+banner_c = "#00D4AA" if sc >= 68 else ("#FFD166" if sc >= 50 else "#FF6B35")
 st.markdown(
-    f'<div style="background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.3);'
-    f'border-radius:10px;padding:1rem 1.4rem;font-size:.95rem;color:{banner_col};margin-bottom:1rem">'
-    f'📋 {fb["overall"]}</div>',
+    f'<div class="surface" style="border-color:rgba(0,212,170,.25);color:{banner_c}">'
+    f'{fb["overall"]}</div>',
     unsafe_allow_html=True,
 )
 
-# ── Feature cards ──
-fb_cols = st.columns(3)
-for col, (key, title) in zip(fb_cols, [("wpm","Speaking Rate"),("pauses","Pause Control"),("fillers","Filler Words")]):
-    with col:
-        data = fb[key]
-        st.markdown(
-            f'<div class="fb-card">'
-            f'<div style="font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;'
-            f'color:#8892A4;margin-bottom:.4rem">{data["icon"]} {title}</div>'
-            f'{data["advice"]}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-# ── Top fillers detail ──
-if top_sorted:
-    top_str = "  ·  ".join(f'<span class="filler">{w}</span> ×{n}' for w, n in top_sorted)
-    st.markdown(
-        f'<div style="font-size:.82rem;color:#8892A4;margin:-.2rem 0 .8rem">'
-        f'Most frequent: {top_str}</div>',
+# Feature cards
+fc1, fc2, fc3 = st.columns(3)
+for col, key, title in [(fc1,"wpm","Speaking Rate"),(fc2,"pauses","Pause Control"),(fc3,"fillers","Filler Words")]:
+    d = fb[key]
+    col.markdown(
+        f'<div class="fb-card">'
+        f'<div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;'
+        f'color:#8892A4;margin-bottom:.35rem">{title}</div>'
+        f'{d["advice"]}</div>',
         unsafe_allow_html=True,
     )
 
-# ── Priority ──
+if top_sorted:
+    ts_html = "  ·  ".join(f'<span class="filler">{w}</span> ×{n}' for w, n in top_sorted)
+    st.markdown(
+        f'<div style="font-size:.79rem;color:#8892A4;margin-top:-.2rem;margin-bottom:.6rem">'
+        f'Most frequent fillers: {ts_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+# Priority
 st.markdown(
-    f'<div class="fb-card" style="border-color:rgba(255,209,102,.3)">'
-    f'<div style="font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:#8892A4;margin-bottom:.4rem">'
-    f'🎯 Priority Focus</div>{fb["priority"]}</div>',
+    f'<div class="fb-card" style="border-color:rgba(255,209,102,.25)">'
+    f'<div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;'
+    f'color:#8892A4;margin-bottom:.35rem">Priority Focus</div>'
+    f'{fb["priority"]}</div>',
     unsafe_allow_html=True,
 )
 
-# ── Exercises ──
-with st.expander("📋 Practice Drills", expanded=True):
+# Practice drills
+with st.expander("Practice Drills", expanded=True):
     for ex in fb["exercises"]:
         st.markdown(
-            f'<div style="padding:.35rem 0;font-size:.88rem;color:#F0F4F8">{ex}</div>',
+            f'<div style="padding:.3rem 0;font-size:.86rem;color:#F0F4F8">{ex}</div>',
             unsafe_allow_html=True,
         )
 
-# ── Groq AI coaching (optional) ──
+# Groq AI coaching
 if groq_key and not r.get("demo"):
     st.markdown("---")
-    st.markdown("### 🤖 AI Coaching  ·  Groq / Llama-3.3")
-    with st.spinner("Generating personalised coaching…"):
+    st.markdown("### AI Coaching  ·  Groq / Llama-3.3")
+    with st.spinner("Generating coaching…"):
         try:
-            ai_advice = groq_coaching(
-                transcript=r["transcript"],
-                wpm=r["wpm"], pause_rate=r["pause_rate"],
-                filler_rate=r["filler_rate"],
-                fluency_score=r["fluency_score"],
-                filler_top=top_sorted,
-                api_key=groq_key,
+            advice = groq_coaching(
+                transcript=r["transcript"], wpm=r["wpm"],
+                pause_rate=r["pause_rate"], filler_rate=r["filler_rate"],
+                fluency_score=sc, filler_top=top_sorted, api_key=groq_key,
             )
-            st.markdown(
-                f'<div class="fb-card fb-card-groq">{ai_advice}</div>',
-                unsafe_allow_html=True,
-            )
+            st.markdown(f'<div class="fb-card fb-card-ai">{advice}</div>',
+                        unsafe_allow_html=True)
         except Exception as e:
-            st.warning(f"Groq coaching unavailable: {e}")
+            st.warning(f"Groq unavailable: {e}")
 elif groq_key and r.get("demo"):
-    st.info("🤖 AI coaching is disabled in demo mode (it needs a real transcript).")
+    st.info("AI coaching disabled in demo mode (requires a real transcript).")
 else:
     st.markdown(
-        '<div style="font-size:.8rem;color:#8892A4;margin-top:.5rem">'
-        '💡 Add a free <b style="color:#F0F4F8">Groq API key</b> in the sidebar for AI-powered, '
-        'transcript-specific coaching (free at <code>console.groq.com</code>, no credit card required).'
+        '<div style="font-size:.77rem;color:#8892A4;margin-top:.4rem">'
+        'Add a free Groq API key in the sidebar for AI-powered, '
+        'transcript-specific coaching (free at <code>console.groq.com</code>, no credit card).'
         '</div>',
         unsafe_allow_html=True,
     )
 
 st.divider()
 
-# ── SECTION 6: Benchmark Comparison ──────────────────────────────────────────
-st.markdown("## Benchmark Comparison")
-bc1, bc2 = st.columns(2)
 
-with bc1:
+# ── SECTION 7: Benchmark comparison ──────────────────────────────────────────
+st.markdown("## Benchmark Comparison")
+bm1, bm2 = st.columns(2)
+
+with bm1:
     for bm_name, bm_vals in BENCHMARKS.items():
-        active    = "→ " if bm_name == benchmark else "   "
-        passes    = sc >= bm_vals["min_score"]
-        cls       = "bm-pass" if passes else "bm-fail"
-        icon      = "✓" if passes else "✗"
+        active = "  →  " if bm_name == benchmark else "      "
+        passes = sc >= bm_vals["min_score"]
+        cls    = "tr-pass" if passes else "tr-fail"
+        mark   = "PASS" if passes else "BELOW"
         st.markdown(
-            f"<div class='bm-row'>"
+            f"<div class='tr'>"
             f"<span style='color:#8892A4'>{active}{bm_name}</span>"
-            f"<span class='{cls}'>{icon} ≥ {bm_vals['min_score']} required</span>"
+            f"<span class='{cls}'>{mark}  (>= {bm_vals['min_score']})</span>"
             f"</div>",
             unsafe_allow_html=True,
         )
 
-with bc2:
+with bm2:
     bm_now = BENCHMARKS[benchmark]
     lo, hi = bm_now["wpm"]
-    items = [
-        ("WPM target",          f"{lo}–{hi}",          r["wpm"],          f"{r['wpm']:.0f}"),
-        ("Pauses/min target",   f"≤ {bm_now['pause_pm']:.1f}",  r["pause_rate"],   f"{r['pause_rate']:.1f}"),
-        ("Fillers/min target",  f"≤ {bm_now['filler_pm']:.1f}", r["filler_rate"],  f"{r['filler_rate']:.1f}"),
-    ]
-    for label, target, actual, actual_str in items:
-        if label == "WPM target":
-            passes = lo <= actual <= hi + 20
-        else:
-            threshold = float(target.replace("≤ ",""))
-            passes = actual <= threshold
-        cls  = "bm-pass" if passes else "bm-fail"
-        icon = "✓" if passes else "✗"
+    for label, target_str, actual, actual_str, passes in [
+        ("WPM target",
+         f"{lo}–{hi}",
+         r["wpm"],
+         f"{r['wpm']:.0f}",
+         lo <= r["wpm"] <= hi + 20),
+        ("Pauses/min target",
+         f"<= {bm_now['pause_pm']:.1f}",
+         r["pause_rate"],
+         f"{r['pause_rate']:.1f}",
+         r["pause_rate"] <= bm_now["pause_pm"]),
+        ("Fillers/min target",
+         f"<= {bm_now['filler_pm']:.1f}",
+         r["filler_rate"],
+         f"{r['filler_rate']:.1f}",
+         r["filler_rate"] <= bm_now["filler_pm"]),
+    ]:
+        cls  = "tr-pass" if passes else "tr-fail"
+        mark = "PASS" if passes else "BELOW"
         st.markdown(
-            f"<div class='bm-row'>"
+            f"<div class='tr'>"
             f"<span style='color:#8892A4'>{label}</span>"
-            f"<span class='{cls}'>{icon} {actual_str} / {target}</span>"
+            f"<span class='{cls}'>{mark}  {actual_str} / {target_str}</span>"
             f"</div>",
             unsafe_allow_html=True,
         )
 
 st.divider()
 
-# ── SECTION 7: Progress Dashboard ────────────────────────────────────────────
-history = get_history()
-st.markdown(f"## Progress Dashboard  ·  {len(history)} session{'s' if len(history) != 1 else ''}")
+
+# ── SECTION 8: Progress dashboard ────────────────────────────────────────────
+history = get_history(username)
+st.markdown(f"## Progress Dashboard  ·  {len(history)} session{'s' if len(history)!=1 else ''}")
 
 if len(history) < 2:
     st.markdown(
-        '<div style="color:#8892A4;font-size:.88rem;padding:1rem 0">'
-        'Complete at least 2 sessions to see your progress chart.</div>',
+        '<div style="color:#8892A4;font-size:.86rem;padding:.8rem 0">'
+        'Record at least 2 sessions to see your progress charts.</div>',
         unsafe_allow_html=True,
     )
 else:
@@ -992,130 +1111,147 @@ else:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    scores_hist  = [h["score"]      for h in history]
-    wpms_hist    = [h["wpm"]        for h in history]
-    pauses_hist  = [h["pause_rate"] for h in history]
-    fillers_hist = [h["filler_rate"]for h in history]
-    dates_hist   = [h.get("date", h["timestamp"][:6]) for h in history]
-    xs           = range(len(history))
-
-    fig, axes = plt.subplots(1, 4, figsize=(12, 2.6))
+    fig, axes = plt.subplots(1, 4, figsize=(12, 2.5))
     fig.patch.set_facecolor("#0D1F35")
 
-    panels = [
-        (axes[0], scores_hist,  "Fluency Score", "#00D4AA", [(68,"--","#FF6B35","≥68"),(80,"-.","#FFD166","≥80")]),
-        (axes[1], wpms_hist,    "WPM",           "#00D4AA", [(140,"--","#FF6B35","140"),(160,"-.","#FFD166","160")]),
-        (axes[2], pauses_hist,  "Pauses/Min",    "#FFD166", [(3.0,"--","#FF6B35","≤3.0")]),
-        (axes[3], fillers_hist, "Fillers/Min",   "#FF6B35", [(2.0,"--","#FF6B35","≤2.0")]),
+    xs      = range(len(history))
+    dates   = [h.get("date", h["timestamp"][:6]) for h in history]
+    panels  = [
+        (axes[0], [h["score"]           for h in history], "Fluency Score",    "#00D4AA",
+         [(68,"--","#FF6B35"),(80,"-.","#FFD166")]),
+        (axes[1], [h["wpm"]             for h in history], "WPM",              "#00D4AA",
+         [(140,"--","#FF6B35"),(160,"-.","#FFD166")]),
+        (axes[2], [h["pause_rate"]      for h in history], "Pauses / Min",     "#FFD166",
+         [(3.0,"--","#FF6B35")]),
+        (axes[3], [h["filler_rate"]     for h in history], "Fillers / Min",    "#FF6B35",
+         [(2.0,"--","#FF6B35")]),
     ]
 
     for ax, data, ylabel, color, refs in panels:
         ax.set_facecolor("#0a1726")
-        ax.plot(xs, data, color=color, marker="o", linewidth=2, markersize=5)
-        for ref_val, ls, rc, rlbl in refs:
-            ax.axhline(ref_val, color=rc, linestyle=ls, linewidth=1, alpha=.6)
+        ax.plot(list(xs), data, color=color, marker="o", linewidth=1.8, markersize=4.5)
+        for rv, ls, rc in refs:
+            ax.axhline(rv, color=rc, linestyle=ls, linewidth=.9, alpha=.6)
         ax.set_xticks(list(xs))
-        ax.set_xticklabels(dates_hist, rotation=30, ha="right", fontsize=6, color="#8892A4")
-        ax.tick_params(axis="y", colors="#8892A4", labelsize=7)
-        ax.set_ylabel(ylabel, color="#8892A4", fontsize=7)
-        for s in ["top","right"]:
-            ax.spines[s].set_visible(False)
-        for s in ["bottom","left"]:
-            ax.spines[s].set_edgecolor("#1E3A5F")
+        ax.set_xticklabels(dates, rotation=28, ha="right", fontsize=6, color="#8892A4")
+        ax.tick_params(axis="y", colors="#8892A4", labelsize=6.5)
+        ax.set_ylabel(ylabel, color="#8892A4", fontsize=6.5)
+        for s in ["top","right"]: ax.spines[s].set_visible(False)
+        for s in ["bottom","left"]: ax.spines[s].set_edgecolor("#1E3A5F")
 
-    plt.tight_layout(pad=0.8)
+    plt.tight_layout(pad=.7)
     st.pyplot(fig, use_container_width=True)
 
-    # Recent table
-    st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
     for h in reversed(history[-6:]):
-        lbl_color = score_color(h["score"])
+        c = score_color(h["score"])
         st.markdown(
-            f"<div class='bm-row'>"
-            f"<span style='color:#8892A4;font-size:.8rem'>{h['timestamp']}</span>"
-            f"<span style='font-family:Space Mono,monospace;font-size:.82rem;"
-            f"color:{lbl_color}'>{h['score']}  {h['label']}</span>"
-            f"<span style='color:#8892A4;font-size:.8rem'>"
-            f"{h['wpm']:.0f} WPM · {h['pause_rate']:.1f} P · {h['filler_rate']:.1f} F</span>"
+            f"<div class='tr'>"
+            f"<span style='color:#8892A4;font-size:.77rem'>{h['timestamp']}</span>"
+            f"<span style='font-family:Space Mono,monospace;font-size:.79rem;color:{c}'>"
+            f"{h['score']}  {h['label']}</span>"
+            f"<span style='color:#8892A4;font-size:.77rem'>"
+            f"{h['wpm']:.0f} WPM  ·  {h['pause_rate']:.1f} P  ·  {h['filler_rate']:.1f} F</span>"
             f"</div>",
             unsafe_allow_html=True,
         )
 
 st.divider()
 
-# ── SECTION 8: Export ──────────────────────────────────────────────────────────
+
+# ── SECTION 9: Export ─────────────────────────────────────────────────────────
 st.markdown("## Export")
-report = {
+
+report_dict = {
     "metadata": {
-        "tool": "Speech Fluency Analyzer · Diego Palencia Research",
+        "tool":      "Speech Fluency Analyzer · Diego Palencia Research",
         "generated": datetime.now().isoformat(),
+        "username":  username,
         "benchmark": benchmark,
-        "demo": r.get("demo", False),
+        "demo":      r.get("demo", False),
     },
     "scores": {
-        "fluency_score": r["fluency_score"],
-        "label": score_label(sc),
-        "wpm_score":    r["wpm_score"],
-        "pause_score":  r["pause_score"],
-        "filler_score": r["filler_score"],
+        "fluency_score": sc,
+        "label":         score_label(sc),
+        "wpm_score":     r["wpm_score"],
+        "pause_score":   r["pause_score"],
+        "filler_score":  r["filler_score"],
     },
     "features": {
-        "wpm": r["wpm"], "pause_count": r["pause_count"],
-        "pause_rate_per_min": r["pause_rate"],
-        "filler_count": r["filler_count"],
+        "wpm":                 r["wpm"],
+        "articulation_rate":   r.get("articulation_rate", 0),
+        "pitch_std_hz":        r.get("pitch_std", 0),
+        "pitch_score":         r.get("pitch_score", 50),
+        "whisper_confidence":  r.get("confidence", 50),
+        "pause_count":         r["pause_count"],
+        "pause_rate_per_min":  r["pause_rate"],
+        "filler_count":        r["filler_count"],
         "filler_rate_per_min": r["filler_rate"],
-        "duration_seconds": round(r["duration_s"], 1),
+        "duration_seconds":    round(r["duration_s"], 1),
     },
     "transcript": r["transcript"],
-    "formula": "Fluency = 0.40×WPM_score + 0.35×Pause_score + 0.25×Filler_score",
-    "references": [
-        "Lennon, P. (1990). Investigating fluency in EFL. Language Learning, 40(3).",
-        "Skehan, P. (1996). Task-based instruction framework. Applied Linguistics, 17(1).",
-        "Tavakoli & Skehan (2005). Strategic planning and task performance.",
-    ],
+    "formula":    "Fluency = 0.40×WPM + 0.35×Pause + 0.25×Filler",
 }
-ex1, ex2 = st.columns(2)
+
+ex1, ex2, ex3 = st.columns(3)
 with ex1:
-    st.download_button("⬇️ Download Report (JSON)", data=json.dumps(report, indent=2),
-                        file_name=f"fluency_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                        mime="application/json", use_container_width=True)
+    st.download_button(
+        "Download JSON Report", data=json.dumps(report_dict, indent=2),
+        file_name=f"fluency_{username}_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+        mime="application/json", use_container_width=True,
+    )
 with ex2:
-    st.download_button("⬇️ Download Transcript (TXT)", data=r["transcript"],
-                        file_name=f"transcript_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                        mime="text/plain", use_container_width=True)
+    st.download_button(
+        "Download Transcript", data=r["transcript"],
+        file_name=f"transcript_{username}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+        mime="text/plain", use_container_width=True,
+    )
+with ex3:
+    if st.button("Generate PDF Report", use_container_width=True):
+        with st.spinner("Building PDF…"):
+            try:
+                from core.report import build_pdf
+                pdf_bytes = build_pdf(r, fb, username, benchmark, top_sorted)
+                st.download_button(
+                    "Download PDF",
+                    data=pdf_bytes,
+                    file_name=f"fluency_report_{username}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except Exception as e:
+                st.error(f"PDF generation failed: {e}")
 
 
-# ── RESEARCH EXPANDER ─────────────────────────────────────────────────────────
-with st.expander("📚 Research Basis & Methodology"):
+# ── Research expander ─────────────────────────────────────────────────────────
+with st.expander("Research Basis and Methodology"):
     st.markdown("""
-#### Theoretical Grounding
-
 | Feature | Source | Empirical Finding |
 |---|---|---|
 | **Speaking Rate (WPM)** | Lennon (1990) | Native English: 130–180 WPM; below 100 = disfluent |
-| **Pause Rate** | Tavakoli & Skehan (2005) | L2 speakers pause 3–4× more; pauses >400ms disrupt comprehension |
-| **Filler Words** | Skehan (1996) | High filler rate signals planning difficulty; pro target <2/min |
+| **Articulation Rate** | Kormos & Denes (2004) | WPM over speech-only time — purer fluency signal than total WPM |
+| **Pause Rate** | Tavakoli & Skehan (2005) | L2 speakers pause 3–4x more; pauses >400ms disrupt comprehension |
+| **Pitch Variation** | Hincks (2005) | F0 std-dev below 20 Hz signals monotone delivery and low engagement |
+| **Filler Words** | Skehan (1996) | High filler rate signals real-time planning difficulty |
 
-#### Composite Score Formula
-
+**Core formula:**
 ```
-wpm_score    = normalize(WPM, min=60, max=180) × 100
-pause_score  = clip( (1 − pause_rate / 10) × 100, 0, 100 )
-filler_score = clip( (1 − filler_rate / 10) × 100, 0, 100 )
-
-Fluency_Score = (0.40 × wpm_score) + (0.35 × pause_score) + (0.25 × filler_score)
+Fluency = (0.40 × WPM score) + (0.35 × Pause score) + (0.25 × Filler score)
 ```
+Extended features (articulation rate, pitch variation, confidence) are displayed
+separately and not included in the composite to preserve the literature-validated weights.
 
-Part of: **Palencia (2025). Computational Feature Extraction for Human Performance Prediction.**  
-OSF Preprints · `github.com/diegopalencia-research`
+Part of: **Palencia (2025). Computational Feature Extraction for Human Performance Prediction.**
 """)
 
 
-# ── FOOTER ────────────────────────────────────────────────────────────────────
+# ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class='footer'>
-  Speech Fluency Analyzer · Project 03 · Diego Jose Palencia Robles<br>
-  github.com/diegopalencia-research · Guatemala City · 2025<br>
-  <span style='opacity:.5'>Lennon (1990) · Skehan (1996) · Tavakoli & Skehan (2005)</span>
+  Speech Fluency Analyzer  ·  Project 03  ·  Diego Jose Palencia Robles<br>
+  github.com/diegopalencia-research  ·  Guatemala City  ·  2025<br>
+  <span style='opacity:.45'>
+    Lennon (1990)  ·  Skehan (1996)  ·  Tavakoli & Skehan (2005)  ·
+    Kormos & Denes (2004)  ·  Hincks (2005)
+  </span>
 </div>
 """, unsafe_allow_html=True)
